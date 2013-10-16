@@ -12,6 +12,7 @@
 
 #include "../idaidp.hpp"
 #include "ins.hpp"
+#include <typeinf.hpp>
 
 //---------------------------------
 // Operand types:
@@ -124,5 +125,23 @@ int is_jump_func(const func_t *pfn, ea_t *jump_target);
 int is_sane_insn(int nocrefs);
 int may_be_func(void);           // can a function start here?
 int get_displ_outf(const op_t &x);
+
+// type system functions
+int h8_calc_arglocs(const type_t *type, cm_t cc, varloc_t *arglocs);
+bool h8_use_stkvar_type(ea_t ea, const type_t *type, const char *name);
+int h8_use_arg_types(ea_t caller,
+                     const type_t * const *types,
+                     const char * const *names,
+                     const varloc_t *arglocs,
+                     int n,
+                     const type_t **rtypes,
+                     const char **rnames,
+                     uint32 *rlocs,
+                     int rn);
+int h8_use_regvar_type(ea_t ea,
+                       const type_t * const *types,
+                       const char * const *names,
+                       const uint32 *regs,
+                       int n);
 
 #endif // _H8_HPP

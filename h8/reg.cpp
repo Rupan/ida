@@ -9,6 +9,7 @@
 
 #include "h8.hpp"
 #include <diskio.hpp>
+#include <typeinf.hpp>
 
 #include <ieee.h>
 
@@ -168,6 +169,105 @@ static int idaapi notify(processor_t::idp_notify msgid, ...)
     default:
       break;
 
+    /* +++ START TYPEINFO CALLBACKS +++ */
+    // see module/{i960,hppa}/reg.cpp starting on line 253
+    // Decorate/undecorate a C symbol name
+    // Arguments:
+    // const til_t *ti    - pointer to til
+    // const char *name   - name of symbol
+    // const type_t *type - type of symbol. If NULL then it will try to guess.
+    // char *outbuf       - output buffer
+    // size_t bufsize     - size of the output buffer
+    // bool mangle        - true-mangle, false-unmangle
+    // cm_t cc            - real calling convention for VOIDARG functions
+    // returns: true if success
+    case processor_t::decorate_name:
+      {
+        const til_t *ti    = va_arg(va, const til_t *);
+        const char *name   = va_arg(va, const char *);
+        const type_t *type = va_arg(va, const type_t *);
+        char *outbuf       = va_arg(va, char *);
+        size_t bufsize     = va_arg(va, size_t);
+        bool mangle        = va_argi(va, bool);
+        cm_t real_cc       = va_argi(va, cm_t);
+        return gen_decorate_name(ti, name, type, outbuf, bufsize, mangle, real_cc);
+      }
+
+    // Setup default type libraries (called after loading a new file into the database)
+    // The processor module may load tils, setup memory model and perform other actions
+    // required to set up the type system.
+    // args:    none
+    // returns: nothing
+    case processor_t::setup_til:
+      {
+      }
+
+    // Purpose: get prefix and size of 'segment based' ptr type (something like
+    // char _ss *ptr). See description in typeinf.hpp.
+    // Other modules simply set the pointer to NULL and return 0
+    // Ilfak confirmed that this approach is correct for the H8.
+    // Used only for BTMT_CLOSURE types, doubtful you will encounter them for H8.
+    // Arguments:
+    // unsigned int ptrt    - ...
+    // const char **ptrname - output arg
+    // returns: size of type
+    case processor_t::based_ptr:
+      {
+        /*unsigned int ptrt =*/ va_arg(va, unsigned int);
+        char **ptrname    = va_arg(va, char **);
+        *ptrname = NULL;
+        return 0;
+      }
+
+    // The H8 supports normal (64KB addressing, 16 bits) and advanced mode
+    // (16MB addressing, 24 bits).  However, according to the Renesas technical
+    // documentation, certain instructions accept 32-bit pointer values where
+    // the upper 8 bits are "reserved".  Ilfak confirms that "4+1" is fine.
+    // Used only for BTMT_CLOSURE types, doubtful you will encounter them for H8.
+    case processor_t::max_ptr_size:
+      {
+        return 4+1;
+      }
+
+    // get default enum size
+    // args:  cm_t cm
+    // returns: sizeof(enum)
+    case processor_t::get_default_enum_size:
+      {
+        // cm_t cm        =  va_argi(va, cm_t);
+        return inf.cc.size_e;
+      }
+
+    case processor_t::use_stkarg_type:
+      {
+        ea_t ea            = va_arg(va, ea_t);
+        const type_t *type = va_arg(va, const type_t *);
+        const char *name   = va_arg(va, const char *);
+        return h8_use_stkvar_type(ea, type, name);
+      }
+
+    // calculate number of purged bytes by the given function type
+    // For cdecl functions, 'purged bytes' is always zero
+    // See the IDA Pro Book, 2e, at the end of pp. 107 for details
+    // args: type_t *type - must be function type
+    // returns: number of bytes purged from the stack + 2
+    case processor_t::calc_purged_bytes:
+      {
+        //e.g. const type_t t_int[] = { BT_INT, 0 };
+        //const type_t *type = va_arg(va, const type_t *); // must be BT_FUNC
+        return 0+2;
+      }
+
+    case processor_t::calc_arglocs2:
+      {
+        const type_t *type = va_arg(va, const type_t *);
+        cm_t cc            = va_argi(va, cm_t);
+        varloc_t *arglocs  = va_arg(va, varloc_t *);
+        return h8_calc_arglocs(type, cc, arglocs);
+      }
+
+    /* +++ END TYPEINFO CALLBACKS +++ */
+
     case processor_t::term:
       free_ioports(ports, numports);
       break;
@@ -237,7 +337,7 @@ processor_t LPH =
 {
   IDP_INTERFACE_VERSION,        // version
   PLFM_H8,                      // id
-  PRN_HEX | PR_USE32,
+  PRN_HEX | PR_USE32 | PR_TYPEINFO,
   8,                            // 8 bits in a byte for code segments
   8,                            // 8 bits in a byte for other segments
 
