@@ -80,15 +80,15 @@ int idaapi accept_file(linput_t *li, char fileformatname[MAX_FILE_FORMAT_NAME], 
     uint16 checksum_file;
     unsigned char buf[HEADER_SIZE];
 
-    // n is initially 0 for each loader, and is increment_byemented after each call
-    if(n) {
+    // n is initially 0 for each loader, and is incremented after each call
+    if(n != 0) {
         return 0;
     }
     file_size = (uint32)qlsize(li);
     if(file_size > MAX_FIRMWARE_SIZE) {
         return 0;
     }
-    if(qlread(li, buf, sizeof(buf)) != sizeof(buf)) {   // FIXME: can return -1
+    if(qlread(li, buf, sizeof(buf)) != sizeof(buf)) {
         return 0;
     }
     qlseek(li, 0, SEEK_SET);
