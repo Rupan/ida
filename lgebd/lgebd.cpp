@@ -59,7 +59,7 @@ static unsigned short calc_firmware_checksum(linput_t *li) {
     while(bytes_processed < file_size) {
         bytes_read = qlread(li, buf, sizeof(buf));  // FIXME: can return -1
         for(i = 0; i < (bytes_read/2); i++)
-        chksum += ntohs(buf[i]);
+            chksum += ntohs(buf[i]);
         bytes_processed += bytes_read;
     }
     qlseek(li, 0, SEEK_SET);
