@@ -9,31 +9,34 @@
 
 #include "h8.hpp"
 #include <diskio.hpp>
+#include <frame.hpp>
+#include <srarea.hpp>
 
 #include <ieee.h>
 
 //--------------------------------------------------------------------------
-static const char *const register_names[] =
+static const char *register_names[] =
 {
-  "r0",   "r1",   "r2",  "r3",  "r4",  "r5",  "r6",  "sp",
+  "r0",   "r1",   "r2",  "r3",  "r4",  "r5",  "r6",  "r7",
   "e0",   "e1",   "e2",  "e3",  "e4",  "e5",  "e6",  "e7",
   "r0h",  "r1h",  "r2h", "r3h", "r4h", "r5h", "r6h", "r7h",
   "r0l",  "r1l",  "r2l", "r3l", "r4l", "r5l", "r6l", "r7l",
-  "er0",  "er1",  "er2", "er3", "er4", "er5", "er6", "sp",
+  "er0",  "er1",  "er2", "er3", "er4", "er5", "er6", "er7",
   "macl", "mach",
   "pc",
-  "ccr",  "exr",
+  "ccr", "exr",
   "cs","ds",       // virtual registers for code and data segments
+  "vbr", "sbr",
 };
 
 //--------------------------------------------------------------------------
-static const uchar retcode_0[] = { 0x56, 0x70 };  // rte
-static const uchar retcode_1[] = { 0x54, 0x70 };  // rts
+static const uchar startcode_0[] = { 0x01, 0x00, 0x6D, 0xF3 };  // push.l  er3
+static const uchar startcode_1[] = { 0x6D, 0xF3 };              // push.w  r3
 
-static const bytes_t retcodes[] =
+static const bytes_t startcodes[] =
 {
-  { sizeof(retcode_0), retcode_0 },
-  { sizeof(retcode_1), retcode_1 },
+  { sizeof(startcode_0), startcode_0 },
+  { sizeof(startcode_1), startcode_1 },
   { 0, NULL }
 };
 
@@ -100,9 +103,84 @@ static const asm_t gas =
   NULL,         // low16
   NULL,         // high16
   "#include \"%s\"",  // a_include_fmt
+  NULL,         // a_vstruc_fmt
+  NULL,         // a_3byte
+  NULL,         // a_rva
+  NULL,         // a_yword
 };
 
-static const asm_t *const asms[] = { &gas, NULL };
+//-----------------------------------------------------------------------
+//      HEW ASM
+//-----------------------------------------------------------------------
+const asm_t hew =
+{
+  AS_ASCIIC|AS_ALIGN2|ASH_HEXF1|ASD_DECF0|ASO_OCTF7|ASB_BINF4|AS_COLON|AS_N2CHR|AS_NCMAS|AS_ONEDUP,
+  UAS_HEW,
+  "HEW assembler",
+  0,
+  NULL,         // header lines
+  NULL,         // no bad instructions
+  ".org",       // org
+  ".end",       // end
+
+  ";",          // comment string
+  '"',          // string delimiter
+  '"',          // char delimiter
+  "\"",         // special symbols in char and string constants
+
+  ".sdata",     // ascii string directive
+  ".data.b",    // byte directive
+  ".data.w",    // word directive
+  ".data.l",    // double words
+  NULL,         // qwords
+  NULL,         // oword  (16 bytes)
+  ".float",     // float  (4 bytes)
+  ".double",    // double (8 bytes)
+  NULL,         // tbyte  (10/12 bytes)
+  NULL,         // packed decimal real
+  NULL,         // arrays (#h,#d,#v,#s(...)
+  ".res %s",    // uninited arrays
+  ": .assign",  // equ that allows set/reset values
+//": .equ",     // equ          (does not allow for reuse)
+//": .reg (%s)",// equ for regs (does not allow for reuse)
+//": .bequ",    // equ for bits (does not allow for reuse)
+  NULL,         // 'seg' prefix (example: push seg seg001)
+  NULL,         // Pointer to checkarg_preline() function.
+  NULL,         // char *(*checkarg_atomprefix)(char *operand,void *res); // if !NULL, is called before each atom
+  NULL,         // const char **checkarg_operations;
+  NULL,         // translation to use in character and string constants.
+  "$",          // current IP (instruction pointer)
+  NULL,         // func_header
+  NULL,         // func_footer
+  ".global",    // "public" name keyword
+  NULL,         // "weak"   name keyword
+  ".global",    // "extrn"  name keyword
+  ".comm",      // "comm" (communal variable)
+  NULL,         // get_type_name
+  ".align",     // "align" keyword
+  '(', ')',     // lbrace, rbrace
+  "%",          // mod
+  "&",          // and
+  "|",          // or
+  "~",          // xor
+  "~",          // not
+  "<<",         // shl
+  ">>",         // shr
+  "sizeof",     // sizeof_fmt
+  0,            // flag2
+  NULL,         // cmnt2
+  "low",        // low8
+  "high",       // high8
+  "lword",      // low16
+  "hword",      // high16
+  ".include \"%s\"",  // a_include_fmt
+  NULL,         // a_vstruc_fmt
+  NULL,         // a_3byte
+  NULL,         // a_rva
+  NULL,         // a_yword
+};
+
+static const asm_t *const asms[] = { &gas, &hew, NULL };
 
 //--------------------------------------------------------------------------
 static char device[MAXSTR] = "";
@@ -124,9 +202,10 @@ const char *find_sym(ea_t address)
 }
 
 //--------------------------------------------------------------------------
-const char *idaapi set_idp_options(const char *keyword,int /*value_type*/,const void * /*value*/)
+static const char *idaapi set_idp_options(const char *keyword,int /*value_type*/,const void * /*value*/)
 {
-  if ( keyword != NULL ) return IDPOPT_BADKEY;
+  if ( keyword != NULL )
+    return IDPOPT_BADKEY;
   if ( choose_ioport_device(cfgname, device, sizeof(device), NULL) )
     load_symbols();
   return IDPOPT_OK;
@@ -138,15 +217,20 @@ proctype_t ptype;
 
 static const proctype_t ptypes[] =
 {
-        P300,
-  ADV | P300,
-        P300 | P2000 | P2600,
-  ADV | P300 | P2000 | P2600,
+             P300,
+  MODE_ADV | P300,
+             P300 | P2000 | P2600,
+  MODE_ADV | P300 | P2000 | P2600,
+             P300 | P2000 | P2600 | PSX,
+  MODE_MID | P300 | P2000 | P2600 | PSX,
+  MODE_ADV | P300 | P2000 | P2600 | PSX,
+  MODE_MAX | P300 | P2000 | P2600 | PSX,
 };
 
 
 static int idaapi notify(processor_t::idp_notify msgid, ...)
 {
+  int ret = 1;
   va_list va;
   va_start(va, msgid);
 
@@ -156,7 +240,11 @@ static int idaapi notify(processor_t::idp_notify msgid, ...)
 // Otherwise the code should be returned to the caller:
 
   int code = invoke_callbacks(HT_IDP, msgid, va);
-  if ( code ) return code;
+  if ( code )
+  {
+    ret = code;
+    goto finish_up;
+  }
 
   switch ( msgid )
   {
@@ -165,15 +253,36 @@ static int idaapi notify(processor_t::idp_notify msgid, ...)
       helper.create("$ h8");
       helper.supval(0, device, sizeof(device));
       inf.mf = 1;
-    default:
       break;
 
     case processor_t::term:
       free_ioports(ports, numports);
       break;
 
+    case processor_t::newasm:    // new assembler type selected
+      {
+        int asmnum = va_arg(va, int);
+        bool hew_asm = asmnum == 1;
+        if ( advanced() )
+        {
+          register_names[R7]  = "r7";
+          register_names[ER7] = hew_asm ? "er7" : "sp";
+        }
+        else
+        {
+          register_names[R7]  = hew_asm ? "r7" : "sp";
+          register_names[ER7] = "er7";
+        }
+      }
+      break;
+
     case processor_t::newfile:   // new file loaded
       load_symbols();
+      if ( is_h8sx() )
+      {
+        set_default_segreg_value(NULL, VBR, 0);
+        set_default_segreg_value(NULL, SBR, 0xFFFFFF00);
+      }
       break;
 
     case processor_t::oldfile:   // old file loaded
@@ -187,10 +296,16 @@ static int idaapi notify(processor_t::idp_notify msgid, ...)
 
     case processor_t::newprc:    // new processor type
       ptype = ptypes[va_arg(va, int)];
-      setflag(ph.flag, PR_DEFSEG32, ptype & ADV);
-      break;
-
-    case processor_t::newasm:    // new assembler type
+      if ( advanced() )
+      {
+        ph.flag |= PR_DEFSEG32;
+      }
+      if ( is_h8sx() )
+      {
+        ph.flag |= PR_SEGS;
+        ph.regLastSreg = SBR;
+        ph.segreg_size = 4;
+      }
       break;
 
     case processor_t::newseg:    // new segment
@@ -200,11 +315,13 @@ static int idaapi notify(processor_t::idp_notify msgid, ...)
       {
         const func_t *pfn = va_arg(va, const func_t *);
         ea_t *jump_target = va_arg(va, ea_t *);
-        return is_jump_func(pfn, jump_target);
+        ret = is_jump_func(pfn, jump_target);
       }
+      break;
 
     case processor_t::is_sane_insn:
-      return is_sane_insn(va_arg(va, int));
+      ret = is_sane_insn(va_arg(va, int));
+      break;
 
     case processor_t::may_be_func:
                                 // can a function start here?
@@ -212,21 +329,58 @@ static int idaapi notify(processor_t::idp_notify msgid, ...)
                                 // returns: probability 0..100
                                 // 'cmd' structure is filled upon the entrace
                                 // the idp module is allowed to modify 'cmd'
-      return may_be_func();
+      ret = may_be_func();
+      break;
 
+    case processor_t::gen_regvar_def:
+      {
+        regvar_t *v = va_arg(va, regvar_t*);
+        if ( is_hew_asm() )
+        {
+          printf_line(0, COLSTR("%s", SCOLOR_REG)
+                      COLSTR(": .reg (", SCOLOR_SYMBOL)
+                      COLSTR("%s", SCOLOR_REG)
+                      COLSTR(")", SCOLOR_SYMBOL), v->user, v->canon);
+          ret = 0;
+        }
+      }
+      break;
+
+    case processor_t::is_ret_insn:
+      {
+        ea_t ea = va_arg(va, ea_t);
+        insn_t saved = cmd;
+        int code2 = decode_insn(ea) != 0 && is_return_insn() ? 2 : 0;
+        cmd = saved;
+        ret = code2;
+      }
+      break;
+
+    default:
+      break;
   }
+
+finish_up:
   va_end(va);
-  return 1;
+  return ret;
 }
 
 //-----------------------------------------------------------------------
-static const char *const shnames[] = { "h8300", "h8300a", "h8s300", "h8s300a", NULL };
+#define FAMILY "Hitachi H8:"
+static const char *const shnames[] =
+{
+  "h8300", "h8300a", "h8s300", "h8s300a", "h8sxn", "h8sxm", "h8sxa", "h8sx", NULL
+};
 static const char *const lnames[] =
 {
-  "Hitachi H8/300H normal",
+  FAMILY"Hitachi H8/300H normal",
   "Hitachi H8/300H advanced",
   "Hitachi H8S normal",
   "Hitachi H8S advanced",
+  "Hitachi H8SX normal",
+  "Hitachi H8SX middle",
+  "Hitachi H8SX advanced",
+  "Hitachi H8SX maximum",
   NULL
 };
 
@@ -237,7 +391,7 @@ processor_t LPH =
 {
   IDP_INTERFACE_VERSION,        // version
   PLFM_H8,                      // id
-  PRN_HEX | PR_USE32,
+  PRN_HEX | PR_USE32 | PR_WORD_INS,
   8,                            // 8 bits in a byte for code segments
   8,                            // 8 bits in a byte for other segments
 
@@ -254,7 +408,7 @@ processor_t LPH =
   segstart,
   segend,
 
-  NULL,                 // generate "assume" directives
+  assumes,              // generate "assume" directives
 
   ana,                  // analyze instruction
   emu,                  // emulate instruction
@@ -279,8 +433,8 @@ processor_t LPH =
   0,                    // size of a segment register
   rVcs, rVds,
 
-  NULL,                 // No known code start sequences
-  retcodes,
+  startcodes,           // start sequences
+  NULL,                 // see is_ret_insn callback in the notify() function
 
   H8_null,
   H8_last,
@@ -296,16 +450,17 @@ processor_t LPH =
                         // normal float
                         // normal double
                         // long double
-  NULL,                 // int (*is_switch)(switch_info_t *si);
+  h8_is_switch,         // int (*is_switch)(switch_info_t *si);
   NULL,                 // int32 (*gen_map_file)(FILE *fp);
   NULL,                 // ea_t (*extract_address)(ea_t ea,const char *string,int x);
   is_sp_based,          // int (*is_sp_based)(op_t &x);
   create_func_frame,    // int (*create_func_frame)(func_t *pfn);
   h8_get_frame_retsize, // int (*get_frame_retsize(func_t *pfn)
-  NULL,                 // void (*gen_stkvar_def)(char *buf,const member_t *mptr,long v);
+  h8_gen_stkvar_def,    // void (*gen_stkvar_def)(char *buf,const member_t *mptr,long v);
   gen_spcdef,           // Generate text representation of an item in a special segment
   H8_rts,               // Icode of return instruction. It is ok to give any of possible return instructions
   set_idp_options,      // const char *(*set_idp_options)(const char *keyword,int value_type,const void *value);
-  is_align_insn,        // int (*is_align_insn)(ea_t ea);
+  h8_is_align_insn,     // int (*is_align_insn)(ea_t ea);
   NULL,                 // mvm_t *mvm;
+  0,                    // high_fixup_bits
 };
