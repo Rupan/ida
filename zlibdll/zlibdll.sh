@@ -14,6 +14,8 @@ then
   exit 1
 fi
 
-tilib -v -c @zlibdll-vc32.cfg -hzlibdll.h -t'zlib 1.1.4 DLL' -b${IDA}/til/pc/vc6win.til zlib114dll.til
-pcf static32/zlibstat.lib zlib114dll.pat
-sigmake -nzlib114dll zlib114dll.pat zlib114dll.sig
+${IDA}/tilib -v -z -c @${IDA}/til-cfg/vc32.cfg -b${IDA}/til/pc/vc6win.til -hzlib114all.h -t'zlib 1.1.4 (WinImage, x86 VC6)' -Izlib114dll zlib114_x86_vc6.til
+
+pcf static32/zlibstat.lib zlib114_x86_vc6.pat
+sigmake -nzlib114dll zlib114_x86_vc6.pat zlib114_x86_vc6.sig
+./bin/linux/sigmake -n'zlib dll 1.1.4 (WinImage, x86 static VC6)' -o2 zlibstat.pat zlib114_x86_vc6.sig

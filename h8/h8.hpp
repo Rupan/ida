@@ -12,6 +12,7 @@
 
 #include "../idaidp.hpp"
 #include "ins.hpp"
+#include <typeinf.hpp>
 
 //---------------------------------
 // Operand types:
@@ -209,5 +210,23 @@ int is_sane_insn(int nocrefs);
 bool idaapi h8_is_switch(switch_info_ex_t *si);
 void idaapi h8_gen_stkvar_def(char *buf, size_t bufsize, const member_t *mptr, sval_t v);
 
+
+// type system functions
+int h8_calc_arglocs(const type_t *type, cm_t cc, varloc_t *arglocs);
+bool h8_use_stkvar_type(ea_t ea, const type_t *type, const char *name);
+int h8_use_arg_types(ea_t caller,
+                     const type_t * const *types,
+                     const char * const *names,
+                     const varloc_t *arglocs,
+                     int n,
+                     const type_t **rtypes,
+                     const char **rnames,
+                     uint32 *rlocs,
+                     int rn);
+int h8_use_regvar_type(ea_t ea,
+                       const type_t * const *types,
+                       const char * const *names,
+                       const uint32 *regs,
+                       int n);
 
 #endif // _H8_HPP

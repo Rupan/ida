@@ -33,11 +33,13 @@
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
+#include <openssl/idea.h>
 #include <openssl/krb5_asn.h>
 #include <openssl/kssl.h>
 #include <openssl/lhash.h>
 #include <openssl/md4.h>
 #include <openssl/md5.h>
+#include <openssl/mdc2.h>
 #include <openssl/modes.h>
 #include <openssl/objects.h>
 #include <openssl/obj_mac.h>

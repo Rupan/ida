@@ -1461,3 +1461,40 @@ bool idaapi h8_is_switch(switch_info_ex_t *si)
   return found;
 }
 
+// Purpose: calculate function argument locations
+// Arguments:
+//   type    : points to the return type of the function type string
+//   cc      : calling convention
+//   arglocs : the result array
+// returns: 1-not implemented, 2-ok, -1-error
+// ==================================================================
+// calc_arglocs should fill the 'arglocs' array with the argument
+// location information. The hppa module does it by calling the
+// set_reg1 and set_stkoff functions.
+// See hppa_calc_arglocs for an example
+// ==================================================================
+// See rej10b0161_h8s.pdf, section 9.3.2 - Function Calling Interface
+int h8_calc_arglocs(const type_t *type, cm_t /*cc*/, varloc_t *arglocs)
+{
+  return -1;
+}
+
+// Purpose: use information about a stack argument
+// Arguments:
+//   ea   : address of the push instruction which
+//          pushes the function argument into the stack
+//   type : the function argument type
+//   name : the function argument name. may be NULL
+// returns: true - ok, false - failed
+// ==================================================================
+// use_stkarg_type gives the processor module the opportunity to
+// attach a comment to the push instruction or otherwise improve
+// the listing. Since hppa does not use push to prepare arguments,
+// this callback is not implemented for it. If you wish, you could
+// call a function similar to hppa_set_op_type() in your
+// implementation of the use_stkarg_type callback. BTW, I checked
+// all processor modules, it is implemented only for x86.
+bool h8_use_stkvar_type(ea_t ea, const type_t *type, const char *name)
+{
+  return false;
+}
