@@ -132,7 +132,6 @@ int idaapi accept_file(linput_t *li, char fileformatname[MAX_FILE_FORMAT_NAME], 
  * load the file into the database
  */
 void idaapi load_file(linput_t *li, ushort _neflag, const char *fileformatname) {
-    refinfo_t rom_ri;
     unsigned char *fw_base, *fw_curr;
     uint32 load_addr, load_size, i, file_size;
     ea_t startEA, endEA, sjtEA, putative_addr;
@@ -176,7 +175,6 @@ void idaapi load_file(linput_t *li, ushort _neflag, const char *fileformatname) 
     startEA = load_addr;
     endEA = load_addr + load_size;
     // init refinfo for the ROM
-    rom_ri.init(REF_OFF32, startEA);
     msg("LGE: load addr = 0x%06X\n", load_addr);
     msg("LGE: load size = 0x%06X\n", load_size);
     // load the ROM firmware into the database
@@ -224,7 +222,7 @@ void idaapi load_file(linput_t *li, ushort _neflag, const char *fileformatname) 
         if(sjtEA != BADADDR) {
             msg("LGE: SCSI jump table found @ 0x%06X\n", sjtEA);
             for(i=0; i<256; i++) {
-                op_offset_ex(sjtEA, 1, &rom_ri);
+                doDwrd(sjtEA, 4);
                 sjtEA += 4;
             }
         }
