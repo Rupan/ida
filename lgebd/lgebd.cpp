@@ -173,7 +173,7 @@ void idaapi load_file(linput_t *li, ushort _neflag, const char *fileformatname) 
     load_addr = ntohl(*(uint32 *)(fw_base+0x40));
     load_size = ntohl(*(uint32 *)(fw_base+0x44));
     startEA = load_addr;
-    endEA = load_addr + load_size;
+    endEA = load_addr + load_size - 1;
     // init refinfo for the ROM
     msg("LGE: load addr = 0x%06X\n", load_addr);
     msg("LGE: load size = 0x%06X\n", load_size);
