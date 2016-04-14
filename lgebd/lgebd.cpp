@@ -146,6 +146,12 @@ static void idaapi load_file(linput_t *li, ushort _neflag, const char *fileforma
 
     if(ph.id != PLFM_H8)
         set_processor_type("h8300a", SETPROC_ALL|SETPROC_FATAL);
+    // 0 -> GNU assembler (possibly from KPIT)
+    //      http://www.kpitgnutools.com/
+    // 1 -> HEW (High-performance Embedded Workshop)
+    //      http://am.renesas.com/products/tools/ide/ide_hew/index.jsp
+    set_target_assembler(1);
+
     // read in the firmware into memory
     file_size = qlsize(li);
     fw_base = (unsigned char *)qalloc(file_size);
