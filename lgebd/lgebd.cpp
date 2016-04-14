@@ -22,6 +22,7 @@
 #else
 #include <arpa/inet.h>
 #endif
+#include <exception>
 
 
 // Firmware header size is 1024 (0x400) bytes
@@ -40,6 +41,14 @@
 #define FW_TYPE_MAIN 1
 #define FW_TYPE_CORE 2
 
+class lgebd_error: public std::exception {
+    private:
+        const char *reason;
+    public:
+        lgebd_error(const char *why) { this->reason = why; }
+        const char * what() const throw() { return this->reason; }
+};
+
 static unsigned short calc_firmware_checksum(linput_t *li) {
     size_t i;
     ssize_t bytes_read;
@@ -49,7 +58,10 @@ static unsigned short calc_firmware_checksum(linput_t *li) {
     uint32 bytes_processed;
 
     qlseek(li, 0, SEEK_SET);
-    bytes_read = qlread(li, buf, sizeof(buf));  // FIXME: can return -1
+    bytes_read = qlread(li, buf, sizeof(buf));
+    if(bytes_read != sizeof(buf)) {
+        throw lgebd_error("Unable to read input file");
+    }
     // checksum is stored in first two bytes - skip
     for(i = 1; i < (bytes_read/2); i++)
         chksum += ntohs(buf[i]);
@@ -57,7 +69,10 @@ static unsigned short calc_firmware_checksum(linput_t *li) {
 
     file_size = (uint32)qlsize(li);
     while(bytes_processed < file_size) {
-        bytes_read = qlread(li, buf, sizeof(buf));  // FIXME: can return -1
+        bytes_read = qlread(li, buf, sizeof(buf));
+        if(bytes_read < 0) {
+            throw lgebd_error("Unable to read input file");
+        }
         for(i = 0; i < (bytes_read/2); i++)
             chksum += ntohs(buf[i]);
         bytes_processed += bytes_read;
@@ -101,7 +116,12 @@ int idaapi accept_file(linput_t *li, char fileformatname[MAX_FILE_FORMAT_NAME], 
         return 0;
     }
     // compare the calculated checksum with the value from the firmware image
-    if(calc_firmware_checksum(li) != checksum_file) {
+    try {
+        if(calc_firmware_checksum(li) != checksum_file) {
+            return 0;
+        }
+    } catch(const lgebd_error &e) {
+        // msg("LGE: failed to calculate firmware checksum: %s\n", e.what());
         return 0;
     }
     // try to identify the firmware type
