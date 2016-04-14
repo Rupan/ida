@@ -15,7 +15,6 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "../idaldr.h"
 // for ntohl and ntohs
 #if defined(__NT__)
 #include <winsock2.h>
@@ -24,22 +23,8 @@
 #endif
 #include <exception>
 
-
-// Firmware header size is 1024 (0x400) bytes
-#define HEADER_SIZE 0x400
-// arbitrary firmware file size limit ... we don't
-// expect drive firmware to be very large.
-#define MAX_FIRMWARE_SIZE 10000000
-
-// segment bitness flags
-#define SEGMENT_16BIT 0
-#define SEGMENT_32BIT 1
-#define SEGMENT_64BIT 2
-
-// firmware types (UNKNOWN/CORE/MAIN)
-#define FW_TYPE_UNKNOWN 0
-#define FW_TYPE_MAIN 1
-#define FW_TYPE_CORE 2
+#include "../idaldr.h"
+#include "lgebd.hpp"
 
 class lgebd_error: public std::exception {
     private:
@@ -91,7 +76,7 @@ static bool verify_firmware_checksum(linput_t *li) {
  * - if recognized, return 1 and fill 'fileformatname'.
  *   otherwise return 0
  */
-int idaapi accept_file(linput_t *li, char fileformatname[MAX_FILE_FORMAT_NAME], int n) {
+static int idaapi accept_file(linput_t *li, char fileformatname[MAX_FILE_FORMAT_NAME], int n) {
     size_t i;
     const char *format_name;
     uint32 file_size, fw_type;
@@ -110,8 +95,8 @@ int idaapi accept_file(linput_t *li, char fileformatname[MAX_FILE_FORMAT_NAME], 
         return 0;
     }
     qlseek(li, 0, SEEK_SET);
-    load_addr = ntohl(*(uint32 *)(buf+0x40));
-    load_size = ntohl(*(uint32 *)(buf+0x44));
+    load_addr = ntohl(*(uint32 *)(buf+HEADER_OFFSET_LOAD_ADDR));
+    load_size = ntohl(*(uint32 *)(buf+HEADER_OFFSET_LOAD_SIZE));
     // the firmware consists of a 0x400-byte header which defines (at least)
     // some strings, the file checksum, the load address, and the load size.
     if((load_size + HEADER_SIZE) != file_size) {
@@ -153,7 +138,7 @@ int idaapi accept_file(linput_t *li, char fileformatname[MAX_FILE_FORMAT_NAME], 
 /*
  * load the file into the database
  */
-void idaapi load_file(linput_t *li, ushort _neflag, const char *fileformatname) {
+static void idaapi load_file(linput_t *li, ushort _neflag, const char *fileformatname) {
     unsigned char *fw_base, *fw_curr;
     uint32 load_addr, load_size, i, file_size;
     ea_t startEA, endEA, sjtEA, putative_addr;
