@@ -49,12 +49,13 @@ class lgebd_error: public std::exception {
         const char * what() const throw() { return this->reason; }
 };
 
-static unsigned short calc_firmware_checksum(linput_t *li) {
+static bool verify_firmware_checksum(linput_t *li) {
     size_t i;
     ssize_t bytes_read;
     uint32 file_size;
     uint16 buf[8192];
-    uint16 chksum = 0x00;
+    uint16 chksum_file;
+    uint16 chksum_calc = 0x00;
     uint32 bytes_processed;
 
     qlseek(li, 0, SEEK_SET);
@@ -62,9 +63,11 @@ static unsigned short calc_firmware_checksum(linput_t *li) {
     if(bytes_read != sizeof(buf)) {
         throw lgebd_error("Unable to read input file");
     }
-    // checksum is stored in first two bytes - skip
+    // the firmware checksum is stored in first two bytes
+    chksum_file = ntohs(buf[0]);
+    // calculate the checksum from the remainder of the input file
     for(i = 1; i < (bytes_read/2); i++)
-        chksum += ntohs(buf[i]);
+        chksum_calc += ntohs(buf[i]);
     bytes_processed = bytes_read;
 
     file_size = (uint32)qlsize(li);
@@ -74,11 +77,12 @@ static unsigned short calc_firmware_checksum(linput_t *li) {
             throw lgebd_error("Unable to read input file");
         }
         for(i = 0; i < (bytes_read/2); i++)
-            chksum += ntohs(buf[i]);
+            chksum_calc += ntohs(buf[i]);
         bytes_processed += bytes_read;
     }
     qlseek(li, 0, SEEK_SET);
-    return ~chksum;
+    chksum_calc = ~chksum_calc;
+    return (chksum_calc == chksum_file);
 }
 
 
@@ -92,7 +96,6 @@ int idaapi accept_file(linput_t *li, char fileformatname[MAX_FILE_FORMAT_NAME], 
     const char *format_name;
     uint32 file_size, fw_type;
     uint32 load_addr, load_size;
-    uint16 checksum_file;
     unsigned char buf[HEADER_SIZE];
 
     // n is initially 0 for each loader, and is incremented after each call
@@ -107,7 +110,6 @@ int idaapi accept_file(linput_t *li, char fileformatname[MAX_FILE_FORMAT_NAME], 
         return 0;
     }
     qlseek(li, 0, SEEK_SET);
-    checksum_file = ntohs(*(uint16 *)(buf+0x00));
     load_addr = ntohl(*(uint32 *)(buf+0x40));
     load_size = ntohl(*(uint32 *)(buf+0x44));
     // the firmware consists of a 0x400-byte header which defines (at least)
@@ -117,7 +119,7 @@ int idaapi accept_file(linput_t *li, char fileformatname[MAX_FILE_FORMAT_NAME], 
     }
     // compare the calculated checksum with the value from the firmware image
     try {
-        if(calc_firmware_checksum(li) != checksum_file) {
+        if(!verify_firmware_checksum(li)) {
             return 0;
         }
     } catch(const lgebd_error &e) {
