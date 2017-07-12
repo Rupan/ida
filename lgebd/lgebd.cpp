@@ -127,7 +127,7 @@ static int idaapi accept_file(qstring *fileformatname, linput_t *li, const char 
         format_name = "LG Renesas Blu-Ray drive firmware (UNKNOWN)";
     }
     fileformatname->insert(0, format_name);
-    return f_LOADER;
+    return 1;
 }
 
 
