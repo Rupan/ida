@@ -229,7 +229,11 @@ static void idaapi load_file(linput_t *li, ushort neflag, const char *fileformat
             current_offset += increment_by;
         }
         if(sjtEA != BADADDR) {
+            #if defined(__EA64__)
+            msg("LGE: SCSI jump table found @ 0x%06llX\n", sjtEA);
+            #else
             msg("LGE: SCSI jump table found @ 0x%06X\n", sjtEA);
+            #endif
             for(i=0; i<256; i++) {
                 create_dword(sjtEA, 4);
                 sjtEA += 4;
