@@ -76,7 +76,12 @@ static bool verify_firmware_checksum(linput_t *li) {
  * - if recognized, return 1 and fill 'fileformatname'.
  *   otherwise return 0
  */
-static int idaapi accept_file(qstring *fileformatname, linput_t *li, const char */*filename*/) {
+static int idaapi accept_file(
+        qstring *fileformatname,
+        qstring *processor,
+        linput_t *li,
+        const char */*filename*/)
+{
     size_t i;
     const char *format_name;
     uint32 file_size, fw_type;
@@ -127,6 +132,7 @@ static int idaapi accept_file(qstring *fileformatname, linput_t *li, const char 
         format_name = "LG Renesas Blu-Ray drive firmware (UNKNOWN)";
     }
     fileformatname->insert(0, format_name);
+    *processor = "h8300a";
     return 1;
 }
 
@@ -134,7 +140,7 @@ static int idaapi accept_file(qstring *fileformatname, linput_t *li, const char 
 /*
  * load the file into the database
  */
-static void idaapi load_file(linput_t *li, ushort neflag, const char *fileformatname) {
+static void idaapi load_file(linput_t *li, ushort neflags, const char *fileformatname) {
     unsigned char *fw_base, *fw_curr;
     uint32 load_addr, load_size, i, file_size;
     ea_t startEA, endEA, sjtEA, putative_addr;
@@ -142,6 +148,9 @@ static void idaapi load_file(linput_t *li, ushort neflag, const char *fileformat
 
     if(ph.id != PLFM_H8)
         set_processor_type("h8300a", SETPROC_LOADER);
+    // TODO: look into set_abi_name() here as well?
+    //  http://gcc-renesas.com/manuals/SH-ABI-Specification.html
+    //  http://gcc.gnu.org/projects/h8300-abi.html
     // 0 -> GNU assembler (possibly from KPIT)
     //      http://www.kpitgnutools.com/
     // 1 -> HEW (High-performance Embedded Workshop)
@@ -243,7 +252,7 @@ static void idaapi load_file(linput_t *li, ushort neflag, const char *fileformat
     // free the allocated memory
     qfree(fw_base);
     // create the file header comment
-    if((neflag & NEF_RELOAD) == 0)
+    if((neflags & NEF_RELOAD) == 0)
         create_filename_cmt();
 }
 
