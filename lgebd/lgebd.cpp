@@ -22,7 +22,7 @@
 #include <arpa/inet.h>
 #endif
 #include <exception>
-
+#include <bytes.hpp>
 #include "../idaldr.h"
 #include "lgebd.hpp"
 
@@ -76,17 +76,18 @@ static bool verify_firmware_checksum(linput_t *li) {
  * - if recognized, return 1 and fill 'fileformatname'.
  *   otherwise return 0
  */
-static int idaapi accept_file(linput_t *li, char fileformatname[MAX_FILE_FORMAT_NAME], int n) {
+static int idaapi accept_file(
+        qstring *fileformatname,
+        qstring *processor,
+        linput_t *li,
+        const char */*filename*/)
+{
     size_t i;
     const char *format_name;
     uint32 file_size, fw_type;
     uint32 load_addr, load_size;
     unsigned char buf[HEADER_SIZE];
 
-    // n is initially 0 for each loader, and is incremented after each call
-    if(n != 0) {
-        return 0;
-    }
     file_size = (uint32)qlsize(li);
     if(file_size > MAX_FIRMWARE_SIZE) {
         return 0;
@@ -108,7 +109,7 @@ static int idaapi accept_file(linput_t *li, char fileformatname[MAX_FILE_FORMAT_
             return 0;
         }
     } catch(const lgebd_error &e) {
-        // msg("LGE: failed to calculate firmware checksum: %s\n", e.what());
+        msg("LGEBD: failed to calculate firmware checksum: %s\n", e.what());
         return 0;
     }
     // try to identify the firmware type
@@ -130,7 +131,8 @@ static int idaapi accept_file(linput_t *li, char fileformatname[MAX_FILE_FORMAT_
     } else {
         format_name = "LG Renesas Blu-Ray drive firmware (UNKNOWN)";
     }
-    qstrncpy(fileformatname, format_name, MAX_FILE_FORMAT_NAME);
+    fileformatname->insert(0, format_name);
+    *processor = "h8300a";
     return 1;
 }
 
@@ -138,14 +140,17 @@ static int idaapi accept_file(linput_t *li, char fileformatname[MAX_FILE_FORMAT_
 /*
  * load the file into the database
  */
-static void idaapi load_file(linput_t *li, ushort _neflag, const char *fileformatname) {
+static void idaapi load_file(linput_t *li, ushort neflags, const char *fileformatname) {
     unsigned char *fw_base, *fw_curr;
     uint32 load_addr, load_size, i, file_size;
     ea_t startEA, endEA, sjtEA, putative_addr;
     uint32 current_offset, increment_by, putative_count;
 
     if(ph.id != PLFM_H8)
-        set_processor_type("h8300a", SETPROC_ALL|SETPROC_FATAL);
+        set_processor_type("h8300a", SETPROC_LOADER);
+    // TODO: look into set_abi_name() here as well?
+    //  http://gcc-renesas.com/manuals/SH-ABI-Specification.html
+    //  http://gcc.gnu.org/projects/h8300-abi.html
     // 0 -> GNU assembler (possibly from KPIT)
     //      http://www.kpitgnutools.com/
     // 1 -> HEW (High-performance Embedded Workshop)
@@ -233,9 +238,13 @@ static void idaapi load_file(linput_t *li, ushort _neflag, const char *fileforma
             current_offset += increment_by;
         }
         if(sjtEA != BADADDR) {
+            #if defined(__EA64__)
+            msg("LGE: SCSI jump table found @ 0x%06llX\n", sjtEA);
+            #else
             msg("LGE: SCSI jump table found @ 0x%06X\n", sjtEA);
+            #endif
             for(i=0; i<256; i++) {
-                doDwrd(sjtEA, 4);
+                create_dword(sjtEA, 4);
                 sjtEA += 4;
             }
         }
@@ -243,7 +252,7 @@ static void idaapi load_file(linput_t *li, ushort _neflag, const char *fileforma
     // free the allocated memory
     qfree(fw_base);
     // create the file header comment
-    if((_neflag & NEF_RELOAD) == 0)
+    if((neflags & NEF_RELOAD) == 0)
         create_filename_cmt();
 }
 
