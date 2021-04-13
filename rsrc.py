@@ -16,13 +16,12 @@ Useful links:
 import io
 import struct
 
-# https://github.com/dgelessus/python-rsrcfork
 import rsrcfork
 
 import idaapi
+import ida_entry
 import idc
 import idc_bc695
-import ida_nalt
 
 
 def accept_file(li, filename):
@@ -49,7 +48,7 @@ def build_data_segs(li):
     resource_info = []
     for resource_name, resource_map in rf.items():
         for resource_obj in resource_map.values():
-            # Some resources nave names like "TUT#" "STR#" "ics#' "ICN#" which aren't valid names
+            # Some resources have names like "TUT#" "STR#" "ics#' "ICN#" which aren't valid
             seg_name_prefix = resource_name.decode('ascii').replace("#", "_pound")
             if resource_obj.id < 0:
                 # Some resource IDs are < 0, special-case then for segment naming
@@ -57,7 +56,7 @@ def build_data_segs(li):
             else:
                 seg_name = f"{seg_name_prefix}_{resource_obj.id}"
             start_ea = rf.data_offset + resource_obj.data_raw_offset
-            # rsrcfork doesn't consider the resource data (size 4) part of the data length
+            # rsrcfork doesn't consider the resource header (size 4) part of the data length
             # However, we load it as part of the entire resource file so add it back here
             end_ea = start_ea + resource_obj.length_raw + 4
             resource_info.append((start_ea, end_ea, seg_name))
@@ -205,9 +204,9 @@ def process_metadata():
 
         reflist = restypelist + idc_bc695.Word(entry + 6) - 2
 
+        # Some resources have # in their names
         # resname = idc_bc695.GetString(entry + 0, 4, idc.ASCSTR_C)
-        # FIXME: some resources have # in their names
-        resname = idc.get_strlit_contents(entry + 0, 4, ida_nalt.STRTYPE_C).decode("utf-8").replace("#", "")
+        resname = idc.get_strlit_contents(entry + 0, 4, idc.STRTYPE_C).decode("utf-8").replace("#", "")
         idc_bc695.MakeNameEx(reflist, "ReferenceList" + resname, 0)
 
         numrefs = idc_bc695.Word(entry + 4) + 1
@@ -280,6 +279,12 @@ def process_metadata():
         idc_bc695.MakeWord(jumpentry + 0)
         idc_bc695.OpOffEx(jumpentry + 0, 0, idc.REF_OFF32, -1, resoffs, -8)
         idc_bc695.MakeComm(jumpentry + 0, "Offset of function")
+
+        jumptable_subroutine_ea = resoffs + idc_bc695.Word(jumpentry + 0) + 8
+        idc.create_insn(jumptable_subroutine_ea)
+        if i == 0:
+            # the application main entry point
+            ida_entry.add_entry(jumptable_subroutine_ea, jumptable_subroutine_ea, "_main", False, 0)
 
         idc_bc695.MakeWord(jumpentry + 2)
         idc_bc695.OpNumber(jumpentry + 2, 0)
