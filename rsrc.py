@@ -13,15 +13,19 @@ Useful links:
  * https://github.com/ubuntor/m68k_mac_reversing_tools
 """
 
-import io
 import struct
 
-import rsrcfork
-
 import idaapi
+import ida_bytes
 import ida_entry
 import idc
 import idc_bc695
+
+
+def build_pascal_str(next_ea):
+    str_len = idc_bc695.Byte(next_ea)
+    ida_bytes.create_strlit(next_ea, 0, idc.STRTYPE_PASCAL)
+    return next_ea + str_len + 1
 
 
 def accept_file(li, filename):
@@ -35,62 +39,11 @@ def accept_file(li, filename):
     return {"format": "Mac OS Classic resource fork", "processor": "68K"}
 
 
-class DataValidationError(Exception):
-    pass
-
-
-def build_data_segs(li):
-    li.seek(0)
-    rsrc_bytes = li.read(li.size())
-    if len(rsrc_bytes) != li.size():
-        raise DataValidationError("Unable to read resource fork data")
-    rf = rsrcfork.ResourceFile(io.BytesIO(rsrc_bytes))
-    resource_info = []
-    for resource_name, resource_map in rf.items():
-        for resource_obj in resource_map.values():
-            # Some resources have names like "TUT#" "STR#" "ics#' "ICN#" which aren't valid
-            seg_name_prefix = resource_name.decode('ascii').replace("#", "_pound")
-            if resource_obj.id < 0:
-                # Some resource IDs are < 0, special-case then for segment naming
-                seg_name = f"{seg_name_prefix}_negative{abs(resource_obj.id)}"
-            else:
-                seg_name = f"{seg_name_prefix}_{resource_obj.id}"
-            start_ea = rf.data_offset + resource_obj.data_raw_offset
-            # rsrcfork doesn't consider the resource header (size 4) part of the data length
-            # However, we load it as part of the entire resource file so add it back here
-            end_ea = start_ea + resource_obj.length_raw + 4
-            resource_info.append((start_ea, end_ea, seg_name))
-    resource_info.sort()  # yes, unstable
-    if resource_info[0][0] != rf.data_offset:
-        raise DataValidationError("First resource doesn't start after header")
-    for resource_idx in range(len(resource_info)-1):
-        _, cur_end_ea, _ = resource_info[resource_idx]
-        next_start_ea, _, _ = resource_info[resource_idx+1]
-        if cur_end_ea != next_start_ea:
-            raise DataValidationError("start/end mismatch")
-    if resource_info[-1][1] != rf.map_offset:
-        raise DataValidationError("Last resource doesn't end at map")
-    # We've got relatively decent looking segment definitions, let's create them!
-    for start_ea, end_ea, seg_name in resource_info:
-        print(f"{seg_name}: start_ea = {hex(start_ea)}; end_ea = {hex(end_ea)}")
-        if seg_name.startswith("CODE") and seg_name != "CODE_0":
-            add_seg(start_ea, end_ea, seg_name, "CODE")
-        else:
-            add_seg(start_ea, end_ea, seg_name, "DATA")
-
-
 def load_file(li, neflags, format):
     li.file2base(0, 0, li.size(), False)
 
     data_start_ea = idc_bc695.Dword(0)
     data_end_ea = data_start_ea + idc_bc695.Dword(8)
-    try:
-        # Be a bit more intelligent: split resources into segments
-        build_data_segs(li)
-    except DataValidationError:
-        # Something failed, just create a giant single CODE segment
-        # The disassembly won't be quite as good, but still passable
-        add_seg(data_start_ea, data_end_ea, "ResourceData", "CODE")
 
     map_start_ea = idc_bc695.Dword(4)
     map_end_ea = map_start_ea + idc_bc695.Dword(12)
@@ -136,7 +89,9 @@ def process_metadata():
     resdata = idc_bc695.Dword(0)
     resmap = idc_bc695.Dword(4)
 
-    idc_bc695.MakeNameEx(resdata, "ResourceData", 0)
+    # left for documentation since this was in the original IDC script
+    # it will be overwritten later anyway when the map data is parsed
+    # idc_bc695.MakeNameEx(resdata, "ResourceData", 0)
     idc_bc695.MakeNameEx(resmap, "ResourceMap", 0)
 
     idc_bc695.MakeDword(resmap)
@@ -233,6 +188,12 @@ def process_metadata():
 
             resid = str(idc_bc695.Word(ref + 0))
             data = resdata + idc_bc695.Dword(ref + 4) - (attrs << 24)
+            data_size = idc_bc695.Dword(data) + 4  # size *after* initial DWORD
+            data_name = resname + "Resource" + resid
+            if resname == "CODE" and resid != "0":
+                add_seg(data, data + data_size, data_name, "CODE")
+            else:
+                add_seg(data, data + data_size, data_name, "DATA")
             idc_bc695.MakeNameEx(data, resname + "Resource" + resid, 0)
 
             idc_bc695.MakeDword(data)
